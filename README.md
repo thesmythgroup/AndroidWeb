@@ -75,30 +75,6 @@ The WebRequest Object features has methods for setting the following properties 
 
 Additionally, to execute a request, call send(Context context, WebReceiver receiver)
 
-```java
-public class MyRequests {
-    public MyRequests(Context context, WebReceiver receiver) {
-        // example request with params
-        WebRequest r1 = new WebRequest("http://www.someservice.com/getJSON")
-        Bundle params = new Bundle();
-        params.putString("q", "kittens");
-        r1.setParams(params);
-        r1.send(context, receiver)
-
-        // fetching an image
-        WebRequest r2 = new WebRequest();
-        // note, you can always set the url later
-        r2.setUrl("http://www.someimageplace.com/kittens.jpg")
-        r2.setContentType(WebService.CONTENT_RAW); // important!
-        r2.send(context, receiver);
-        // also note, images fetched will be cached to disk with a reference to it
-        // in the sqlite database. This is compliant with use of a ContentProvider
-        // so this image can be shared with other apps if so permitted
-        // in the AndroidManifest.xml
-    }
-}
-```
-
 ### Setting Params
 
 ```java
