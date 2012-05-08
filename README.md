@@ -39,15 +39,15 @@ public class MyActivity extends Activity implements WebReceiver {
     @Override
     public void onReceiveResult(int resultCode, Bundle resultData) {
         switch (resultCode) {
-        case WebService.STATUS_RUNNING:
+        case STATUS_RUNNING:
             // TODO provide user feedback that service is running
             break;
-        case WebService.STATUS_FINISHED:
+        case STATUS_FINISHED:
             String key = resultData.getString(WebService.REQUEST_KEY);
             String response = WebService.getResponseString(this, key);
             handleResponse(response)
             break;
-        case WebService.STATUS_ERROR:
+        case STATUS_ERROR:
             Exception e = (Exception) resultData.getSerializable(WebService.RESPONSE_EXCEPTION);
             e.printStackTrace();
             break;
