@@ -5,11 +5,11 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -29,7 +29,7 @@ import android.util.Log;
  * TODO
  * 
  * @author Daniel Skinner <daniel@dasa.cc>
- *
+ * 
  */
 public class WebService extends Service {
 
@@ -66,9 +66,7 @@ public class WebService extends Service {
 	// managed during service life cycle
 	private WebContentProvider.Database mDatabase;
 	private ExecutorService mPool;
-
-	// private static Map<String, Intent> mIntents;
-	private static Map<String, WebServiceResultReceiver> mResultReceivers;
+	private static final Map<String, WebServiceResultReceiver> mResultReceivers = new ConcurrentHashMap<String, WebServiceResultReceiver>();
 
 	/**
 	 * Debug logging for org.tsg.web classes.
@@ -173,7 +171,8 @@ public class WebService extends Service {
 				} else if (mDatabase.contains(cacheKey, request.mCacheTimeValue, request.mCacheTimeType)) {
 					bundle.putBoolean("fromCache", true);
 				} else {
-					// only send WebReceiver.STATUS_RUNNING if making an actual service call
+					// only send WebReceiver.STATUS_RUNNING if making an actual service
+					// call
 					mIntent.putExtra("status", WebReceiver.STATUS_RUNNING);
 					bundle.putString(WebReceiver.REQUEST_KEY, cacheKey);
 					receiver.send(WebReceiver.STATUS_RUNNING, bundle);
@@ -190,7 +189,7 @@ public class WebService extends Service {
 				receiver.send(WebReceiver.STATUS_FINISHED, bundle);
 				mIntent.putExtra("status", WebReceiver.STATUS_FINISHED);
 			} catch (Exception e) {
-				bundle.putSerializable("exception", e);
+				bundle.putSerializable(WebReceiver.RESPONSE_EXCEPTION, e);
 				receiver.send(WebReceiver.STATUS_ERROR, bundle);
 				mIntent.putExtra("status", WebReceiver.STATUS_ERROR);
 			}
@@ -212,7 +211,7 @@ public class WebService extends Service {
 		private List<WebReceiver> mReceivers = new ArrayList<WebReceiver>();
 		private Bundle mLastResult;
 		private String mRequestKey;
-		private boolean mIsPending = false;
+		private boolean mIsPending;
 
 		public WebServiceResultReceiver(Handler handler, String requestKey) {
 			super(handler);
@@ -225,6 +224,21 @@ public class WebService extends Service {
 
 		public boolean isPending() {
 			return mIsPending;
+		}
+
+		public void pause() {
+			mIsPending = true;
+		}
+
+		public synchronized void resume() {
+			mIsPending = false;
+
+			if (mLastResult != null) {
+				// TODO are there race conditions here?
+				int resultCode = mLastResult.getInt(KEY_RESULT_CODE);
+				Bundle resultData = mLastResult.getBundle(KEY_RESULT_DATA);
+				onReceiveResult(resultCode, resultData);
+			}
 		}
 
 		public String getRequestKey() {
@@ -264,7 +278,10 @@ public class WebService extends Service {
 			mLastResult.putBundle(KEY_RESULT_DATA, resultData);
 
 			synchronized (mReceivers) {
-				mIsPending = (mReceivers.size() == 0);
+				if (!mIsPending && mReceivers.size() == 0) {
+					mIsPending = true;
+				}
+				// mIsPending = (mReceivers.size() == 0);
 
 				if (!mIsPending) {
 					for (WebReceiver receiver : mReceivers) {
@@ -279,16 +296,30 @@ public class WebService extends Service {
 	 * Remove all receivers from all service intents.
 	 */
 	public static void clearReceivers() {
-		if (mResultReceivers == null)
-			return;
-
-		synchronized (mResultReceivers) {
-			for (Entry<String, WebServiceResultReceiver> entry : mResultReceivers.entrySet()) {
-				WebServiceResultReceiver resultReceiver = entry.getValue();
-				resultReceiver.getReceivers().clear();
-			}
+		for (Entry<String, WebServiceResultReceiver> entry : mResultReceivers.entrySet()) {
+			WebServiceResultReceiver resultReceiver = entry.getValue();
+			resultReceiver.getReceivers().clear();
 		}
+	}
 
+	/**
+	 * Pause all receivers.
+	 */
+	public static void pauseReceivers() {
+		for (Entry<String, WebServiceResultReceiver> entry : mResultReceivers.entrySet()) {
+			WebServiceResultReceiver resultReceiver = entry.getValue();
+			resultReceiver.pause();
+		}
+	}
+
+	/**
+	 * Resume all receivers.
+	 */
+	public static void resumeReceivers() {
+		for (Entry<String, WebServiceResultReceiver> entry : mResultReceivers.entrySet()) {
+			WebServiceResultReceiver resultReceiver = entry.getValue();
+			resultReceiver.resume();
+		}
 	}
 
 	/**
@@ -297,15 +328,10 @@ public class WebService extends Service {
 	 * @param receiver
 	 */
 	public static void removeReceiver(WebReceiver receiver) {
-		if (mResultReceivers == null)
-			return;
-
-		synchronized (mResultReceivers) {
-			for (Entry<String, WebServiceResultReceiver> entry : mResultReceivers.entrySet()) {
-				WebServiceResultReceiver resultReceiver = entry.getValue();
-				if (resultReceiver.getReceivers().contains(receiver)) {
-					resultReceiver.getReceivers().remove(receiver);
-				}
+		for (Entry<String, WebServiceResultReceiver> entry : mResultReceivers.entrySet()) {
+			WebServiceResultReceiver resultReceiver = entry.getValue();
+			if (resultReceiver.getReceivers().contains(receiver)) {
+				resultReceiver.getReceivers().remove(receiver);
 			}
 		}
 	}
@@ -350,28 +376,25 @@ public class WebService extends Service {
 			return cacheKey;
 		}
 
-		// Check if Service is already pending
-		if (mResultReceivers == null) {
-			// this is always getting nullified when service finishes all
-			// requests
-			mResultReceivers = new HashMap<String, WebServiceResultReceiver>();
-		}
+		/*
+		 * // Check if Service is already pending if (mResultReceivers == null) { //
+		 * this is always getting nullified when service finishes all // requests
+		 * mResultReceivers = new HashMap<String, WebServiceResultReceiver>(); }
+		 */
 
-		synchronized (mResultReceivers) {
-			for (Entry<String, WebServiceResultReceiver> entry : mResultReceivers.entrySet()) {
+		for (Entry<String, WebServiceResultReceiver> entry : mResultReceivers.entrySet()) {
 
-				WebServiceResultReceiver resultReceiver = entry.getValue();
-				String cacheKeyExtra = resultReceiver.getRequestKey();
+			WebServiceResultReceiver resultReceiver = entry.getValue();
+			String cacheKeyExtra = resultReceiver.getRequestKey();
 
-				if (cacheKey.equals(cacheKeyExtra)) {
-					// TODO are there race conditions here?
-					// TODO should probably already be missing from by now, is
-					// check necessary?
-					int statusExtra = resultReceiver.mLastResult.getInt(WebServiceResultReceiver.KEY_RESULT_CODE);
-					if (statusExtra == WebReceiver.STATUS_CREATED || statusExtra == WebReceiver.STATUS_RUNNING || resultReceiver.isPending()) {
-						resultReceiver.addReceiver(receiver);
-						return cacheKey;
-					}
+			if (cacheKey.equals(cacheKeyExtra)) {
+				// TODO are there race conditions here?
+				// TODO should probably already be missing from by now, is
+				// check necessary?
+				int statusExtra = resultReceiver.mLastResult.getInt(WebServiceResultReceiver.KEY_RESULT_CODE);
+				if (statusExtra == WebReceiver.STATUS_CREATED || statusExtra == WebReceiver.STATUS_RUNNING || resultReceiver.isPending()) {
+					resultReceiver.addReceiver(receiver);
+					return cacheKey;
 				}
 			}
 		}
@@ -387,9 +410,7 @@ public class WebService extends Service {
 		service.putExtra("uuid", uuid);
 		service.putExtra("cacheKey", cacheKey);
 
-		synchronized (mResultReceivers) {
-			mResultReceivers.put(cacheKey, resultReceiver);
-		}
+		mResultReceivers.put(cacheKey, resultReceiver);
 
 		context.getApplicationContext().startService(service);
 
@@ -440,9 +461,6 @@ public class WebService extends Service {
 		// mPool = Executors.newFixedThreadPool(POOL_SIZE, new
 		// ServiceThreadFactory());
 
-		if (mResultReceivers == null) {
-			mResultReceivers = new HashMap<String, WebServiceResultReceiver>();
-		}
 		mDatabase = WebContentProvider.Database.getInstance(getApplicationContext());
 	}
 
@@ -460,9 +478,11 @@ public class WebService extends Service {
 	@Override
 	public void onDestroy() {
 
-		synchronized (mResultReceivers) {
-			mResultReceivers.clear();
-			mResultReceivers = null;
+		for (Entry<String, WebServiceResultReceiver> entry : mResultReceivers.entrySet()) {
+			WebServiceResultReceiver resultReceiver = entry.getValue();
+			if (!resultReceiver.isPending()) {
+				mResultReceivers.remove(entry.getKey());
+			}
 		}
 
 		mPool.shutdown();
