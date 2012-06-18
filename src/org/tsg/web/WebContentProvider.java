@@ -163,7 +163,7 @@ public class WebContentProvider extends ContentProvider {
 
 			String data = null;
 
-			if (type == WebService.CONTENT_RAW) {
+			if (type == WebService.CONTENT_RAW || response.length > 1000000) {
 				try {
 					File f = new File(mContext.getFilesDir(), key);
 					data = f.getAbsolutePath();
