@@ -66,6 +66,7 @@ public class WebService extends Service {
 	// managed during service life cycle
 	private WebContentProvider.Database mDatabase;
 	private ExecutorService mPool;
+	private static final List<Integer> mStartIds = new ArrayList<Integer>();
 	private static final Map<String, WebServiceResultReceiver> mResultReceivers = new ConcurrentHashMap<String, WebServiceResultReceiver>();
 
 	/**
@@ -138,15 +139,21 @@ public class WebService extends Service {
 	protected final class WebServiceHandler implements Runnable {
 
 		private Intent mIntent;
-		private int mStartId;
+		private Integer mStartId;
 
-		public WebServiceHandler(Intent intent, int startId) {
+		public WebServiceHandler(Intent intent, Integer startId) {
+			synchronized (mStartIds) {
+				mStartIds.add(startId);
+			}
 			mIntent = intent;
 			mStartId = startId;
 		}
 
 		@Override
 		public void run() {
+
+			log(Log.DEBUG, "Starting Request");
+
 			Bundle data = mIntent.getExtras();
 
 			ResultReceiver receiver = data.getParcelable("receiver");
@@ -167,34 +174,48 @@ public class WebService extends Service {
 
 			try {
 				if (request.mFakeData != null) {
+					log(Log.DEBUG, "Handling FakeData");
 					mDatabase.put(cacheKey, uuid, client.mContentType, request.mFakeData.getBytes(), null);
 				} else if (mDatabase.contains(cacheKey, request.mCacheTimeValue, request.mCacheTimeType)) {
+					log(Log.DEBUG, "Returning cached data");
 					bundle.putBoolean("fromCache", true);
 				} else {
 					// only send WebReceiver.STATUS_RUNNING if making an actual service
 					// call
+					log(Log.DEBUG, "Preparing Request");
 					mIntent.putExtra("status", WebReceiver.STATUS_RUNNING);
 					bundle.putString(WebReceiver.REQUEST_KEY, cacheKey);
 					receiver.send(WebReceiver.STATUS_RUNNING, bundle);
 					bundle = new Bundle();
 					bundle.putBundle(WebReceiver.DEVELOPER_EXTRAS, request.mDeveloperExtras);
 					//
+					log(Log.DEBUG, "Calling Request");
 					client.call();
 					mDatabase.put(cacheKey, uuid, client.mContentType, client.mResponseBytes, client.mResponseContentType);
 					bundle.putInt(WebReceiver.RESPONSE_CODE, client.mResponseCode);
 					bundle.putString(WebReceiver.RESPONSE_MESSAGE, client.mResponseMessage);
 				}
 
+				log(Log.DEBUG, "Notifying Receivers");
 				bundle.putString(WebReceiver.REQUEST_KEY, cacheKey);
 				receiver.send(WebReceiver.STATUS_FINISHED, bundle);
 				mIntent.putExtra("status", WebReceiver.STATUS_FINISHED);
 			} catch (Exception e) {
+				log(Log.DEBUG, "Error Encountered");
 				bundle.putSerializable(WebReceiver.RESPONSE_EXCEPTION, e);
 				receiver.send(WebReceiver.STATUS_ERROR, bundle);
 				mIntent.putExtra("status", WebReceiver.STATUS_ERROR);
 			}
 
-			stopSelf(mStartId);
+			log(Log.DEBUG, "Stopping Request");
+			synchronized (mStartIds) {
+				mStartIds.remove(mStartId);
+				if (mStartIds.size() == 0) {
+					stopSelf();
+				}
+			}
+			//boolean b = stopSelfResult(mStartId);
+			//log(Log.DEBUG, "stopSelfResult", b);
 		}
 
 	}
@@ -456,6 +477,8 @@ public class WebService extends Service {
 
 	@Override
 	public void onCreate() {
+		log(Log.DEBUG, "Created ThreadPool");
+
 		mPool = Executors.newFixedThreadPool(POOL_SIZE);
 		// mPool = Executors.newSingleThreadExecutor();
 		// mPool = Executors.newFixedThreadPool(POOL_SIZE, new
@@ -466,6 +489,7 @@ public class WebService extends Service {
 
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
+		log(Log.DEBUG, "Executing Threaded Request");
 		mPool.execute(new WebServiceHandler(intent, startId));
 		return START_STICKY;
 	}
@@ -477,7 +501,9 @@ public class WebService extends Service {
 
 	@Override
 	public void onDestroy() {
+		log(Log.DEBUG, "Destroying Service Object");
 
+		log(Log.DEBUG, "Purging non-pending receivers");
 		for (Entry<String, WebServiceResultReceiver> entry : mResultReceivers.entrySet()) {
 			WebServiceResultReceiver resultReceiver = entry.getValue();
 			if (!resultReceiver.isPending()) {
@@ -485,12 +511,15 @@ public class WebService extends Service {
 			}
 		}
 
+		log(Log.DEBUG, "Shutting down ThreadPool");
 		mPool.shutdown();
 		try {
 			if (!mPool.awaitTermination(5, TimeUnit.SECONDS)) {
+				log(Log.DEBUG, "ThreadPool did not shutdown, forcing shutdown");
 				mPool.shutdownNow();
 			}
 		} catch (InterruptedException e) {
+			log(Log.DEBUG, "Error shutting down ThreadPool, forcing shutdown");
 			mPool.shutdownNow();
 			Thread.currentThread().interrupt();
 		}
