@@ -21,9 +21,15 @@ import android.util.Log;
 public class WebContentProvider extends ContentProvider {
 
 	static int MAX_CACHE_SIZE = 5000;
+	static String PACKAGE_NAME;
 
 	public static Uri getDefaultAuthority(Context context) {
-		return Uri.parse("content://" + context.getApplicationContext().getPackageName());
+		if (PACKAGE_NAME == null) {
+			// fix onResume in complex situations where context is lost
+			// by caching package name
+			PACKAGE_NAME = context.getApplicationContext().getPackageName();
+		}
+		return Uri.parse("content://" + PACKAGE_NAME);
 	}
 
 	@Override

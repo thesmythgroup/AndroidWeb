@@ -154,6 +154,11 @@ public class WebService extends Service {
 
 			log(Log.DEBUG, "Starting Request");
 
+			if (mIntent == null) {
+				// TODO
+				return;
+			}
+
 			Bundle data = mIntent.getExtras();
 
 			ResultReceiver receiver = data.getParcelable("receiver");
@@ -214,8 +219,8 @@ public class WebService extends Service {
 					stopSelf();
 				}
 			}
-			//boolean b = stopSelfResult(mStartId);
-			//log(Log.DEBUG, "stopSelfResult", b);
+			// boolean b = stopSelfResult(mStartId);
+			// log(Log.DEBUG, "stopSelfResult", b);
 		}
 
 	}
@@ -306,7 +311,11 @@ public class WebService extends Service {
 
 				if (!mIsPending) {
 					for (WebReceiver receiver : mReceivers) {
-						receiver.onReceiveResult(resultCode, resultData);
+						try {
+							receiver.onReceiveResult(resultCode, resultData);
+						} catch (NullPointerException e) {
+							e.printStackTrace();
+						}
 					}
 				}
 			}
@@ -470,7 +479,11 @@ public class WebService extends Service {
 	}
 
 	public static String getResponseString(Context context, String responseKey) {
-		return new String(getResponseBytes(context, responseKey));
+		try {
+			return new String(getResponseBytes(context, responseKey));
+		} catch (NullPointerException e) {
+			return "";
+		}
 	}
 
 	/* Service Implementation */

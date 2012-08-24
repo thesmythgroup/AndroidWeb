@@ -45,9 +45,9 @@ public class WebRequest implements Parcelable {
 	}
 
 	/**
-	 * Generates key based on values of mUrl, mParams, and mHeaders. This can be
-	 * used outside the scope of making a web service call to query the cache
-	 * directly for the last result if available.
+	 * Gets key based on values of mUrl, mParams, and mHeaders. This can be used
+	 * outside the scope of making a web service call to query the cache directly
+	 * for the last result if available.
 	 * 
 	 * @return
 	 */
@@ -123,6 +123,17 @@ public class WebRequest implements Parcelable {
 	 * @param cacheTimeType
 	 */
 	public void setCacheTimeType(Integer cacheTimeType) {
+		mCacheTimeType = cacheTimeType;
+	}
+
+	/**
+	 * Convenience method to set cache validity
+	 * 
+	 * @param cacheTimeValue
+	 * @param cacheTimeType
+	 */
+	public void setCacheTime(Integer cacheTimeValue, Integer cacheTimeType) {
+		mCacheTimeValue = cacheTimeValue;
 		mCacheTimeType = cacheTimeType;
 	}
 
