@@ -28,6 +28,7 @@ import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.client.params.ClientPNames;
 import org.apache.http.client.params.CookiePolicy;
 import org.apache.http.entity.HttpEntityWrapper;
+import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.params.BasicHttpParams;
@@ -49,6 +50,7 @@ import android.os.Bundle;
 public class WebClient {
 	Bundle mHeaders;
 	Bundle mParams;
+	String mBody;
 
 	Integer mResponseCode;
 	String mResponseMessage;
@@ -61,6 +63,7 @@ public class WebClient {
 	Integer mContentType;
 
 	public WebClient(WebRequest request) {
+		mBody = request.mBody;
 		mParams = request.mParams;
 		mHeaders = request.mHeaders;
 
@@ -102,14 +105,18 @@ public class WebClient {
 	 */
 	protected HttpEntity getEntity() throws Exception {
 		// TODO make configurable for StringEntity or UrlEncodedFormEntity
-		List<NameValuePair> requestParams = new ArrayList<NameValuePair>();
-		if (mParams != null) {
-			for (String k : mParams.keySet()) {
-				Object v = mParams.get(k);
-				requestParams.add(new BasicNameValuePair(String.valueOf(k), String.valueOf(v)));
+		if (mBody != null) {
+			return new StringEntity(mBody);
+		} else {
+			List<NameValuePair> requestParams = new ArrayList<NameValuePair>();
+			if (mParams != null) {
+				for (String k : mParams.keySet()) {
+					Object v = mParams.get(k);
+					requestParams.add(new BasicNameValuePair(String.valueOf(k), String.valueOf(v)));
+				}
 			}
+			return new UrlEncodedFormEntity(requestParams);
 		}
-		return new UrlEncodedFormEntity(requestParams);
 	}
 
 	/**

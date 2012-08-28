@@ -9,6 +9,7 @@ import android.os.Parcelable;
 public class WebRequest implements Parcelable {
 
 	String mUrl;
+	String mBody;
 	Bundle mParams;
 	Bundle mHeaders;
 	Integer mMethod;
@@ -30,10 +31,11 @@ public class WebRequest implements Parcelable {
 		mCacheTimeType = WebService.TIME_SECOND;
 	}
 
-	public WebRequest(String url, Bundle params, Bundle headers, Integer method, Integer contentType, Integer cacheTimeValue, Integer cacheTimeType, Bundle developerExtras,
+	public WebRequest(String url, String body, Bundle params, Bundle headers, Integer method, Integer contentType, Integer cacheTimeValue, Integer cacheTimeType, Bundle developerExtras,
 			String fakeData) {
 
 		mUrl = url;
+		mBody = body;
 		mParams = params;
 		mHeaders = headers;
 		mMethod = method;
@@ -66,6 +68,20 @@ public class WebRequest implements Parcelable {
 
 	public String getUrl() {
 		return mUrl;
+	}
+
+	/**
+	 * String containing raw body to be used for performing a POST. If body and
+	 * params is set for a request, body takes precedence.
+	 * 
+	 * @param body
+	 */
+	public void setBody(String body) {
+		mBody = body;
+	}
+
+	public String getBody() {
+		return mBody;
 	}
 
 	/**
@@ -193,6 +209,7 @@ public class WebRequest implements Parcelable {
 	@Override
 	public void writeToParcel(Parcel dest, int flags) {
 		dest.writeString(mUrl);
+		dest.writeString(mBody);
 		dest.writeBundle(mParams);
 		dest.writeBundle(mHeaders);
 		dest.writeInt(mMethod);
@@ -206,7 +223,7 @@ public class WebRequest implements Parcelable {
 	public static final Parcelable.Creator<WebRequest> CREATOR = new Parcelable.Creator<WebRequest>() {
 		@Override
 		public WebRequest createFromParcel(Parcel source) {
-			return new WebRequest(source.readString(), source.readBundle(), source.readBundle(), source.readInt(), source.readInt(), source.readInt(), source.readInt(),
+			return new WebRequest(source.readString(), source.readString(), source.readBundle(), source.readBundle(), source.readInt(), source.readInt(), source.readInt(), source.readInt(),
 					source.readBundle(), source.readString());
 		}
 
