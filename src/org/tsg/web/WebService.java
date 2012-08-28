@@ -40,6 +40,9 @@ public class WebService extends Service {
 	private static final String LOG_TAG = "WebService";
 
 	//
+	private static Class WebClientClass = WebClient.class;
+
+	//
 	public static final int METHOD_GET = 0;
 	public static final int METHOD_POST = 1;
 	public static final int METHOD_PUT = 2;
@@ -115,6 +118,15 @@ public class WebService extends Service {
 	}
 
 	/**
+	 * Set subclass of WebClient to be used for requests.
+	 * 
+	 * @param cls
+	 */
+	public static void setWebClient(Class cls) {
+		WebClientClass = cls;
+	}
+
+	/**
 	 * Useful if requests are already cached and working off-line. Sets all
 	 * request cache lengths to 999 years, forcing a pull from cache db if
 	 * previously fetched.
@@ -156,6 +168,7 @@ public class WebService extends Service {
 
 			if (mIntent == null) {
 				// TODO
+				log(Log.DEBUG, "Intent is null! returning ...");
 				return;
 			}
 
@@ -164,10 +177,20 @@ public class WebService extends Service {
 			ResultReceiver receiver = data.getParcelable("receiver");
 			WebRequest request = data.getParcelable("request");
 
-			WebClient client = new WebClient(request);
-
 			Bundle bundle = new Bundle();
 			bundle.putBundle(WebReceiver.DEVELOPER_EXTRAS, request.mDeveloperExtras);
+
+			WebClient client;
+			try {
+				client = (WebClient) WebClientClass.getConstructor(WebRequest.class).newInstance(request);
+			} catch (Exception e) {
+				e.printStackTrace();
+				log(Log.DEBUG, "Error Encountered");
+				bundle.putSerializable(WebReceiver.RESPONSE_EXCEPTION, e);
+				receiver.send(WebReceiver.STATUS_ERROR, bundle);
+				mIntent.putExtra("status", WebReceiver.STATUS_ERROR);
+				return;
+			}
 
 			String uuid = mIntent.getStringExtra("uuid");
 			String cacheKey = mIntent.getStringExtra("cacheKey");
