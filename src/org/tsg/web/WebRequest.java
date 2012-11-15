@@ -54,7 +54,7 @@ public class WebRequest implements Parcelable {
 	 * @return
 	 */
 	public String getKey() {
-		return String.valueOf((mUrl + String.valueOf(mParams) + String.valueOf(mHeaders)).hashCode());
+		return String.valueOf((mUrl + String.valueOf(mParams) + String.valueOf(mHeaders) + String.valueOf(mBody)).hashCode());
 	}
 
 	/**
