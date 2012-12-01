@@ -1,19 +1,22 @@
 package org.tsg.web;
 
+import java.io.File;
+
 import android.content.Context;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.util.Log;
 
 public class WebRequest implements Parcelable {
 
 	String mUrl;
 	String mBody;
+	File mFile;
 	Bundle mParams;
 	Bundle mHeaders;
 	Integer mMethod;
-	Integer mContentType;
 	Integer mCacheTimeValue;
 	Integer mCacheTimeType;
 	Bundle mDeveloperExtras;
@@ -26,20 +29,21 @@ public class WebRequest implements Parcelable {
 	public WebRequest(String url) {
 		mUrl = url;
 		mMethod = WebService.METHOD_GET;
-		mContentType = WebService.CONTENT_AUTO;
+		mHeaders = new Bundle();
 		mCacheTimeValue = 10;
 		mCacheTimeType = WebService.TIME_SECOND;
+		mFile = null;
 	}
 
-	public WebRequest(String url, String body, Bundle params, Bundle headers, Integer method, Integer contentType, Integer cacheTimeValue, Integer cacheTimeType, Bundle developerExtras,
+	public WebRequest(String url, String body, File file, Bundle params, Bundle headers, Integer method, Integer cacheTimeValue, Integer cacheTimeType, Bundle developerExtras,
 			String fakeData) {
 
 		mUrl = url;
 		mBody = body;
+		mFile = file;
 		mParams = params;
 		mHeaders = headers;
 		mMethod = method;
-		mContentType = contentType;
 		mCacheTimeValue = cacheTimeValue;
 		mCacheTimeType = cacheTimeType;
 		mDeveloperExtras = developerExtras;
@@ -80,6 +84,17 @@ public class WebRequest implements Parcelable {
 		mBody = body;
 	}
 
+	/**
+	 * Stream chunked data to server from given file. Helpful to avoid memory
+	 * overhead of large data sets.
+	 * 
+	 * @param file
+	 */
+	public void setBody(File file) {
+		mFile = file;
+		setContentType("application/x-www-form-urlencoded");
+	}
+
 	public String getBody() {
 		return mBody;
 	}
@@ -100,9 +115,15 @@ public class WebRequest implements Parcelable {
 	 * String.valueOf, so this can be any Parcelable object implementing an
 	 * appropriate toString method.
 	 * 
+	 * If headers of current request are not empty. This will replace those
+	 * headers and produce a warning.
+	 * 
 	 * @param headers
 	 */
 	public void setHeaders(Bundle headers) {
+		if (!mHeaders.isEmpty()) {
+			WebService.log(Log.WARN, "Call to `setHeaders` is replacing non-empty headers bundle! " + mHeaders);
+		}
 		mHeaders = headers;
 	}
 
@@ -116,12 +137,55 @@ public class WebRequest implements Parcelable {
 	}
 
 	/**
-	 * Service.CONTENT_[TYPE] for AUTO, RAW, STRING
+	 * Helper method for setting `Content-Type` header.
 	 * 
 	 * @param contentType
 	 */
-	public void setContentType(Integer contentType) {
-		mContentType = contentType;
+	public void setContentType(String... contentTypes) {
+		for (String contentType : contentTypes) {
+			updateHeader("Content-Type", contentType);
+		}
+	}
+
+	/**
+	 * Used internally to identify request content type after request finishes for
+	 * storage in cache db.
+	 * 
+	 * @return
+	 */
+	String getContentType() {
+		if (mHeaders != null) {
+			return mHeaders.getString("Content-Type");
+		}
+		return null;
+	}
+
+	/**
+	 * Convenience method for setting `Accept` header.
+	 * 
+	 * @param accepts
+	 */
+	public void setAccept(String... accepts) {
+		for (String accept : accepts) {
+			updateHeader("Accept", accept);
+		}
+	}
+
+	private void updateHeader(String key, String value) {
+		String s = mHeaders.getString(key);
+
+		if (s == null) {
+			mHeaders.putString(key, value);
+			return;
+		}
+
+		if (s.indexOf(value) != 0) {
+			WebService.log(Log.WARN, key + " already set in header of request. Skipping update");
+			return;
+		}
+
+		s += ";" + value;
+		mHeaders.putString(key, s);
 	}
 
 	/**
@@ -176,7 +240,7 @@ public class WebRequest implements Parcelable {
 
 	@Override
 	public String toString() {
-		return String.format("Request<%s,%s,%s,%s,%s,%s,%s,%s,%s>", mUrl, mParams, mHeaders, mMethod, mContentType, mCacheTimeValue, mCacheTimeType, mDeveloperExtras, mFakeData);
+		return String.format("Request<%s,%s,%s,%s,%s,%s,%s,%s>", mUrl, mParams, mHeaders, mMethod, mCacheTimeValue, mCacheTimeType, mDeveloperExtras, mFakeData);
 	}
 
 	/* Convenience wrappers for WebService.helper methods */
@@ -210,10 +274,10 @@ public class WebRequest implements Parcelable {
 	public void writeToParcel(Parcel dest, int flags) {
 		dest.writeString(mUrl);
 		dest.writeString(mBody);
+		dest.writeSerializable(mFile);
 		dest.writeBundle(mParams);
 		dest.writeBundle(mHeaders);
 		dest.writeInt(mMethod);
-		dest.writeInt(mContentType);
 		dest.writeInt(mCacheTimeValue);
 		dest.writeInt(mCacheTimeType);
 		dest.writeBundle(mDeveloperExtras);
@@ -223,8 +287,8 @@ public class WebRequest implements Parcelable {
 	public static final Parcelable.Creator<WebRequest> CREATOR = new Parcelable.Creator<WebRequest>() {
 		@Override
 		public WebRequest createFromParcel(Parcel source) {
-			return new WebRequest(source.readString(), source.readString(), source.readBundle(), source.readBundle(), source.readInt(), source.readInt(), source.readInt(), source.readInt(),
-					source.readBundle(), source.readString());
+			return new WebRequest(source.readString(), source.readString(), (File) source.readSerializable(), source.readBundle(), source.readBundle(), source.readInt(),
+					source.readInt(), source.readInt(), source.readBundle(), source.readString());
 		}
 
 		@Override

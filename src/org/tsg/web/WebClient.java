@@ -1,5 +1,6 @@
 package org.tsg.web;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -27,6 +28,7 @@ import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.client.params.ClientPNames;
 import org.apache.http.client.params.CookiePolicy;
+import org.apache.http.entity.FileEntity;
 import org.apache.http.entity.HttpEntityWrapper;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.DefaultHttpClient;
@@ -34,7 +36,6 @@ import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.params.BasicHttpParams;
 import org.apache.http.params.HttpParams;
 import org.apache.http.params.HttpProtocolParams;
-import org.apache.http.protocol.HTTP;
 import org.apache.http.protocol.HttpContext;
 import org.apache.http.util.EntityUtils;
 
@@ -51,25 +52,23 @@ public class WebClient {
 	Bundle mHeaders;
 	Bundle mParams;
 	String mBody;
+	File mFile;
 
 	Integer mResponseCode;
 	String mResponseMessage;
-	String mResponseString;
 	byte[] mResponseBytes;
 	String mResponseContentType;
 
 	String mUrl;
 	Integer mMethod;
-	Integer mContentType;
 
 	public WebClient(WebRequest request) {
 		mBody = request.mBody;
+		mFile = request.mFile;
 		mParams = request.mParams;
 		mHeaders = request.mHeaders;
-
 		mUrl = request.mUrl;
 		mMethod = request.mMethod;
-		mContentType = request.mContentType;
 	}
 
 	/**
@@ -79,8 +78,9 @@ public class WebClient {
 	 * @throws Exception
 	 */
 	protected URI getURI() throws Exception {
-		if (mMethod != WebService.METHOD_GET || mParams == null)
+		if (mMethod != WebService.METHOD_GET || mParams == null) {
 			return new URI(mUrl);
+		}
 
 		String uri = mUrl + "?";
 		Iterator<String> iter = mParams.keySet().iterator();
@@ -104,8 +104,9 @@ public class WebClient {
 	 * @throws Exception
 	 */
 	protected HttpEntity getEntity() throws Exception {
-		// TODO make configurable for StringEntity or UrlEncodedFormEntity
-		if (mBody != null) {
+		if (mFile != null) {
+			return new FileEntity(mFile, mHeaders.getString("Content-Type"));
+		} else if (mBody != null) {
 			return new StringEntity(mBody);
 		} else {
 			List<NameValuePair> requestParams = new ArrayList<NameValuePair>();
@@ -222,28 +223,17 @@ public class WebClient {
 	}
 
 	/**
-     * 
-     */
-	protected void getContentType(HttpResponse response) {
-		Header responseContentType = response.getFirstHeader("Content-Type");
-		if (responseContentType == null) {
-			mContentType = WebService.CONTENT_RAW;
-		} else {
-			mContentType = WebService.CONTENT_STRING;
-		}
-	}
-
-	/**
 	 * 
 	 * @param entity
 	 * @throws Exception
 	 */
 	protected void handleResponse(HttpEntity entity) throws Exception {
-		if (mContentType == WebService.CONTENT_RAW) {
+		String charSet = EntityUtils.getContentCharSet(entity);
+
+		if (charSet == null) {
 			mResponseBytes = EntityUtils.toByteArray(entity);
 		} else {
-			mResponseString = EntityUtils.toString(entity, HTTP.UTF_8);
-			mResponseBytes = mResponseString.getBytes();
+			mResponseBytes = EntityUtils.toString(entity, charSet).getBytes();
 		}
 	}
 
@@ -256,7 +246,6 @@ public class WebClient {
 	protected void call() throws Exception {
 		mResponseCode = null;
 		mResponseMessage = null;
-		mResponseString = null;
 
 		URI uri = getURI();
 		HttpUriRequest request = getRequest(uri);
@@ -277,12 +266,8 @@ public class WebClient {
 		mResponseCode = response.getStatusLine().getStatusCode();
 		mResponseMessage = response.getStatusLine().getReasonPhrase();
 
-		// TODO start storing contentType
 		Header responseContentType = response.getFirstHeader("Content-Type");
 		mResponseContentType = responseContentType.getValue();
-
-		if (mContentType == null || mContentType == WebService.CONTENT_AUTO)
-			getContentType(response);
 
 		handleResponse(response.getEntity());
 	}

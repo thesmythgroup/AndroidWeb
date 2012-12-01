@@ -1,5 +1,6 @@
 package org.tsg.web;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -15,6 +16,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import android.app.Service;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
@@ -40,7 +42,7 @@ public class WebService extends Service {
 	private static final String LOG_TAG = "WebService";
 
 	//
-	private static Class WebClientClass = WebClient.class;
+	private static Class<WebClient> WebClientClass = WebClient.class;
 
 	//
 	public static final int METHOD_GET = 0;
@@ -48,9 +50,9 @@ public class WebService extends Service {
 	public static final int METHOD_PUT = 2;
 	public static final int METHOD_DELETE = 3;
 
-	public static final int CONTENT_AUTO = 0;
-	public static final int CONTENT_RAW = 1;
-	public static final int CONTENT_STRING = 2;
+	public static final String CONTENT_AUTO = "*/*";
+	public static final String CONTENT_RAW = "application/octet-stream";
+	public static final String CONTENT_STRING = "text/plain";
 
 	public static final int TIME_SECOND = 0;
 	public static final int TIME_MINUTE = 1;
@@ -67,7 +69,7 @@ public class WebService extends Service {
 	private static int POOL_SIZE = 3;
 
 	// managed during service life cycle
-	private WebContentProvider.Database mDatabase;
+	// private WebContentProvider.Database mDatabase;
 	private ExecutorService mPool;
 	private static final List<Integer> mStartIds = new ArrayList<Integer>();
 	private static final Map<String, WebServiceResultReceiver> mResultReceivers = new ConcurrentHashMap<String, WebServiceResultReceiver>();
@@ -122,7 +124,7 @@ public class WebService extends Service {
 	 * 
 	 * @param cls
 	 */
-	public static void setWebClient(Class cls) {
+	public static void setWebClient(Class<WebClient> cls) {
 		WebClientClass = cls;
 	}
 
@@ -143,6 +145,16 @@ public class WebService extends Service {
 	 */
 	public static void setMaxCacheSize(int kilobytes) {
 		WebContentProvider.MAX_CACHE_SIZE = kilobytes;
+	}
+
+	/**
+	 * Deletes the cache database, effectively clearing the cache.
+	 * 
+	 * @param context
+	 */
+	public static void deleteDatabase(Context context) {
+		context = context.getApplicationContext();
+		context.deleteDatabase("serviceResponseCache");
 	}
 
 	/**
@@ -201,10 +213,27 @@ public class WebService extends Service {
 			}
 
 			try {
+
+				Uri uri = WebContentProvider.getDefaultAuthority(getApplicationContext()).buildUpon().appendPath(cacheKey).build();
+
+				boolean fromCache = false;
+				Cursor c = getApplicationContext().getContentResolver().query(uri, null, null, null, null);
+				if (c.getCount() != 0) {
+					fromCache = true;
+				}
+				c.close();
+
 				if (request.mFakeData != null) {
 					log(Log.DEBUG, "Handling FakeData");
-					mDatabase.put(cacheKey, uuid, client.mContentType, request.mFakeData.getBytes(), null);
-				} else if (mDatabase.contains(cacheKey, request.mCacheTimeValue, request.mCacheTimeType)) {
+					// mDatabase.put(cacheKey, uuid, request.getContentType(),
+					// request.mFakeData.getBytes(), null);
+					ContentValues values = new ContentValues();
+					values.put("uuid", uuid);
+					values.put("type", request.getContentType());
+					values.put("response", request.mFakeData.getBytes());
+					values.put("contentType", "");
+					getApplicationContext().getContentResolver().insert(uri, values);
+				} else if (fromCache) {
 					log(Log.DEBUG, "Returning cached data");
 					bundle.putBoolean("fromCache", true);
 				} else {
@@ -219,7 +248,14 @@ public class WebService extends Service {
 					//
 					log(Log.DEBUG, "Calling Request");
 					client.call();
-					mDatabase.put(cacheKey, uuid, client.mContentType, client.mResponseBytes, client.mResponseContentType);
+
+					ContentValues values = new ContentValues();
+					values.put("uuid", uuid);
+					values.put("type", request.getContentType());
+					values.put("response", client.mResponseBytes);
+					values.put("contentType", client.mResponseContentType);
+					getApplicationContext().getContentResolver().insert(uri, values);
+
 					bundle.putInt(WebReceiver.RESPONSE_CODE, client.mResponseCode);
 					bundle.putString(WebReceiver.RESPONSE_MESSAGE, client.mResponseMessage);
 				}
@@ -235,15 +271,12 @@ public class WebService extends Service {
 				mIntent.putExtra("status", WebReceiver.STATUS_ERROR);
 			}
 
-			log(Log.DEBUG, "Stopping Request");
 			synchronized (mStartIds) {
 				mStartIds.remove(mStartId);
 				if (mStartIds.size() == 0) {
 					stopSelf();
 				}
 			}
-			// boolean b = stopSelfResult(mStartId);
-			// log(Log.DEBUG, "stopSelfResult", b);
 		}
 
 	}
@@ -415,6 +448,8 @@ public class WebService extends Service {
 	 * @return
 	 */
 	public static String helper(Context context, Handler handler, WebReceiver receiver, WebRequest request) {
+		context = context.getApplicationContext();
+
 		String uuid = UUID.randomUUID().toString();
 		String cacheKey = request.getKey();
 
@@ -428,12 +463,6 @@ public class WebService extends Service {
 			receiver.onReceiveResult(WebReceiver.STATUS_FINISHED, bundle);
 			return cacheKey;
 		}
-
-		/*
-		 * // Check if Service is already pending if (mResultReceivers == null) { //
-		 * this is always getting nullified when service finishes all // requests
-		 * mResultReceivers = new HashMap<String, WebServiceResultReceiver>(); }
-		 */
 
 		for (Entry<String, WebServiceResultReceiver> entry : mResultReceivers.entrySet()) {
 
@@ -452,8 +481,10 @@ public class WebService extends Service {
 			}
 		}
 
-		if (handler == null)
+		if (handler == null) {
 			handler = new Handler();
+		}
+
 		WebServiceResultReceiver resultReceiver = new WebServiceResultReceiver(handler, cacheKey);
 		resultReceiver.addReceiver(receiver);
 
@@ -471,6 +502,8 @@ public class WebService extends Service {
 	}
 
 	public static byte[] getResponseBytes(Context context, String responseKey) {
+		context = context.getApplicationContext();
+
 		byte[] bytes = null;
 		Uri uri = WebContentProvider.getDefaultAuthority(context).buildUpon().appendPath(responseKey).build();
 
@@ -501,10 +534,38 @@ public class WebService extends Service {
 		return bytes;
 	}
 
+	public static InputStream getResponseStream(Context context, String responseKey) {
+		context = context.getApplicationContext();
+
+		InputStream inputStream = null;
+		byte[] bytes = null;
+		Uri uri = WebContentProvider.getDefaultAuthority(context).buildUpon().appendPath(responseKey).build();
+
+		Cursor c = context.getContentResolver().query(uri, null, null, null, null);
+		if (c.moveToFirst()) {
+			bytes = c.getBlob(0);
+
+			if (bytes == null) {
+				try {
+					inputStream = context.getContentResolver().openInputStream(uri);
+				} catch (FileNotFoundException e) {
+					e.printStackTrace();
+				}
+			} else {
+				inputStream = new ByteArrayInputStream(bytes);
+			}
+		}
+		c.close();
+		return inputStream;
+	}
+
 	public static String getResponseString(Context context, String responseKey) {
+		context = context.getApplicationContext();
+
 		try {
 			return new String(getResponseBytes(context, responseKey));
 		} catch (NullPointerException e) {
+			e.printStackTrace();
 			return "";
 		}
 	}
@@ -514,13 +575,7 @@ public class WebService extends Service {
 	@Override
 	public void onCreate() {
 		log(Log.DEBUG, "Created ThreadPool");
-
 		mPool = Executors.newFixedThreadPool(POOL_SIZE);
-		// mPool = Executors.newSingleThreadExecutor();
-		// mPool = Executors.newFixedThreadPool(POOL_SIZE, new
-		// ServiceThreadFactory());
-
-		mDatabase = WebContentProvider.Database.getInstance(getApplicationContext());
 	}
 
 	@Override
@@ -560,14 +615,5 @@ public class WebService extends Service {
 			Thread.currentThread().interrupt();
 		}
 	}
-
-	/*
-	 * private static class WebServiceThreadFactory implements ThreadFactory {
-	 * 
-	 * @Override public Thread newThread(Runnable r) { Thread thread = new
-	 * Thread(r); thread.setPriority(Thread.MIN_PRIORITY); return thread; }
-	 * 
-	 * }
-	 */
 
 }

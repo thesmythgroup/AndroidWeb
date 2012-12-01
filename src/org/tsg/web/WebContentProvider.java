@@ -6,6 +6,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Locale;
 
 import android.content.ContentProvider;
 import android.content.ContentValues;
@@ -60,7 +61,13 @@ public class WebContentProvider extends ContentProvider {
 
 	@Override
 	public Uri insert(Uri uri, ContentValues values) {
-		return null;
+		String key = uri.getLastPathSegment();
+		String uuid = values.getAsString("uuid");
+		String type = values.getAsString("type");
+		byte[] response = values.getAsByteArray("response");
+		String contentType = values.getAsString("contentType");
+		Database.getInstance(getContext()).put(key, uuid, type, response, contentType);
+		return uri;
 	}
 
 	@Override
@@ -103,7 +110,7 @@ public class WebContentProvider extends ContentProvider {
 			mContext = context;
 		}
 
-		public static Database getInstance(Context context) {
+		public static synchronized Database getInstance(Context context) {
 			if (instance == null) {
 				instance = new Database(context.getApplicationContext());
 				instance.open();
@@ -113,7 +120,7 @@ public class WebContentProvider extends ContentProvider {
 
 		@Override
 		public void onCreate(SQLiteDatabase database) {
-			database.execSQL("create table cache (_ID integer primary key, uuid text, response blob, _data text, mime_type text, type integer, timestamp date)");
+			database.execSQL("create table cache (_ID integer primary key, uuid text, response blob, _data text, mime_type text, type text, timestamp date)");
 		}
 
 		@Override
@@ -123,7 +130,6 @@ public class WebContentProvider extends ContentProvider {
 
 		public void open() {
 			mDatabase = getWritableDatabase();
-			mDatabase.setLockingEnabled(true);
 		}
 
 		@Override
@@ -161,7 +167,7 @@ public class WebContentProvider extends ContentProvider {
 		 * @param uuid
 		 * @param response
 		 */
-		public void put(String key, String uuid, Integer type, byte[] response, String contentType) {
+		public void put(String key, String uuid, String type, byte[] response, String contentType) {
 			// TODO check size of response, if too big, store on file system and
 			// save reference to record
 			// TODO write as rawQuery and use builtin datetime() for method
@@ -169,7 +175,7 @@ public class WebContentProvider extends ContentProvider {
 
 			String data = null;
 
-			if (type == WebService.CONTENT_RAW || response.length > 1000000) {
+			if (contentType.contains("image") || response.length > 1000000) {
 				try {
 					File f = new File(mContext.getFilesDir(), key);
 					data = f.getAbsolutePath();
@@ -288,7 +294,7 @@ public class WebContentProvider extends ContentProvider {
 		}
 
 		private String getTimeStamp() {
-			SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+			SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
 			Date date = new Date();
 			return dateFormat.format(date);
 		}
