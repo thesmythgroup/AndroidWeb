@@ -2,6 +2,7 @@ package org.tsg.web;
 
 import android.content.Context;
 import android.os.Bundle;
+import java.io.InputStream;
 
 public class WebResponse {
 
@@ -45,6 +46,10 @@ public class WebResponse {
 
 	public byte[] getBytes() {
 		return WebService.getResponseBytes(mContext, getRequestKey());
+	}
+
+	public InputStream getStream() {
+		return WebService.getResponseStream(mContext, getRequestKey());
 	}
 
 	public Exception getException() {
