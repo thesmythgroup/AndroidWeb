@@ -3,16 +3,52 @@ package org.tsg.web;
 import android.content.Context;
 import android.os.Bundle;
 import java.io.InputStream;
+import java.io.Serializable;
 
 public class WebResponse {
 
 	private Context mContext;
 	private int mResultCode;
 	private Bundle mResultData;
+	private Bundle mSerializables;
+
+	public WebResponse(Context context) {
+		this(context, 0, null);
+	}
 
 	public WebResponse(Context context, int resultCode, Bundle resultData) {
 		mContext = context;
 		mResultCode = resultCode;
+		mResultData = resultData;
+		mSerializables = new Bundle();
+	}
+
+	public <T extends Serializable> T get(String key) {
+		return (T) mSerializables.getSerializable(key);
+	}
+
+	public void set(String key, Serializable obj) {
+		mSerializables.putSerializable(key, obj);
+	}
+
+	public synchronized void join() {
+		while(isRunning()) {
+			try {
+				wait();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+
+	public synchronized void setResultCode(int resultCode) {
+		mResultCode = resultCode;
+		if (!isRunning()) {
+			notifyAll();
+		}
+	}
+
+	public void setResultData(Bundle resultData) {
 		mResultData = resultData;
 	}
 
@@ -25,7 +61,8 @@ public class WebResponse {
 	}
 
 	public boolean isRunning() {
-		return mResultCode == WebReceiver.STATUS_RUNNING;
+		// return mResultCode == WebReceiver.STATUS_RUNNING;
+		return !isFinished() && !isException();
 	}
 
 	public boolean isFinished() {
