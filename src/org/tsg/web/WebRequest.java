@@ -255,6 +255,33 @@ public class WebRequest implements Parcelable {
 		return WebService.helper(context, this);
 	}
 
+	public WebResponse send2(Context context) {
+
+		final WebResponse resp = new WebResponse(context.getApplicationContext());
+
+		WebReceiver recv = new WebReceiver() {
+			public void onReceiveResult(int resultCode, Bundle resultData) {
+				synchronized (resp) {
+					resp.setResultCode(resultCode);
+					resp.setResultData(resultData);
+
+					switch (resultCode) {
+					case STATUS_FINISHED:
+					case STATUS_ERROR:
+						resp.notifyAll();
+						break;
+					}
+				}
+			}
+		};
+
+		String key = WebService.helper(context, recv, this);
+		Bundle data = new Bundle();
+		data.putString(WebReceiver.REQUEST_KEY, key);
+		resp.setResultData(data);
+		return resp;
+	}
+
 	public String send(Context context, WebReceiver receiver) {
 		return WebService.helper(context, receiver, this);
 	}

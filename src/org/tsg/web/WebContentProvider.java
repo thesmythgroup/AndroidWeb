@@ -13,6 +13,7 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteDiskIOException;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.net.Uri;
 import android.os.Bundle;
@@ -203,11 +204,16 @@ public class WebContentProvider extends ContentProvider {
 			values.put(COL_TIMESTAMP, getTimeStamp());
 			values.put(COL_MIME_TYPE, contentType);
 
-			if (contains(key)) {
-				mDatabase.update(TABLE_CACHE, values, "_ID=?", new String[] { key });
-			} else {
-				mDatabase.insert(TABLE_CACHE, null, values);
+			try {
+				if (contains(key)) {
+					mDatabase.update(TABLE_CACHE, values, "_ID=?", new String[] { key });
+				} else {
+					mDatabase.insert(TABLE_CACHE, null, values);
+				}
+			} catch (Throwable t) {
+				t.printStackTrace();
 			}
+			
 		}
 
 		public boolean contains(String key) {
@@ -231,10 +237,16 @@ public class WebContentProvider extends ContentProvider {
 			String query = "select " + selectValues + " from " + TABLE_CACHE + " where _ID=?";
 			Cursor cursor = mDatabase.rawQuery(query, new String[] { key });
 
-			if (!cursor.moveToFirst()) {
-				cursor.close();
+			try {
+				if (!cursor.moveToFirst()) {
+					cursor.close();
+					return false;
+				}
+			} catch (SQLiteDiskIOException e) {
+				e.printStackTrace();
 				return false;
 			}
+			
 
 			int i = cursor.getInt(0);
 			cursor.close();

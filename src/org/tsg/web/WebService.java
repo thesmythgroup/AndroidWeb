@@ -535,6 +535,7 @@ public class WebService extends Service {
 	}
 
 	public static InputStream getResponseStream(Context context, String responseKey) {
+		/*
 		context = context.getApplicationContext();
 
 		InputStream inputStream = null;
@@ -557,6 +558,9 @@ public class WebService extends Service {
 		}
 		c.close();
 		return inputStream;
+		*/
+		byte[] bytes = getResponseBytes(context, responseKey);
+		return new ByteArrayInputStream(bytes);
 	}
 
 	public static String getResponseString(Context context, String responseKey) {
